@@ -63,7 +63,7 @@ ShiftGuard/
 1. **Clone the repository:**
 
    ```bash
-git clone https://github.com/anusha24-bit/ShiftGuard.git
+   git clone https://github.com/anusha24-bit/ShiftGuard.git
    cd ShiftGuard
    ```
 
