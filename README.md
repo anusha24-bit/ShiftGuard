@@ -55,10 +55,10 @@ VIX + VIX change, DXY + DXY change, S&P 500 return, oil return, rolling correlat
 
 | Role | Model | Purpose |
 |---|---|---|
-| Baseline 1 | LSTM + Attention (all 4 groups) | Strong sequence baseline — proves temporal modeling alone isn't enough for adaptive retraining |
-| Baseline 2 | Random Forest (all 4 groups) | Strong bagging baseline — proves bagging can't keep up with boosting under retraining |
-| Baseline 3 | Stacked Ensemble: LSTM+XGBoost→XGBoost meta (all 4 groups) | Complexity baseline — proves stacking adds overhead without improving retraining speed |
-| **Main Model** | **XGBoost (all 4 groups)** | **Best retraining efficiency, native TreeSHAP, fast on small windows** |
+| Baseline 1 | LSTM + Attention (all 4 groups) | Medium complexity — deep sequential model. Proves temporal modeling alone isn't enough |
+| Baseline 2 | Random Forest (all 4 groups) | Low complexity — bagging ensemble. Proves simple tree ensembles can't adapt fast enough |
+| Baseline 3 | Stacked Ensemble: LSTM + RF → Logistic Regression meta (all 4 groups) | Highest complexity — two heterogeneous models combined. Proves complexity doesn't solve retraining |
+| **Main Model** | **XGBoost (all 4 groups)** | **Right-sized — best balance of accuracy, retraining speed, and SHAP compatibility** |
 
 All 4 models get the **same features**. The only variable is the algorithm.
 
