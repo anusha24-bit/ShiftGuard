@@ -58,10 +58,9 @@ VIX + VIX change, DXY + DXY change, S&P 500 return, oil return, rolling correlat
 | Baseline 1 | LSTM + Attention (all 4 groups) | Strong sequence baseline — proves temporal modeling alone isn't enough for adaptive retraining |
 | Baseline 2 | Random Forest (all 4 groups) | Strong bagging baseline — proves bagging can't keep up with boosting under retraining |
 | Baseline 3 | Stacked Ensemble: LSTM+XGBoost→XGBoost meta (all 4 groups) | Complexity baseline — proves stacking adds overhead without improving retraining speed |
-| Baseline 4 | TFT / Temporal Fusion Transformer (all 4 groups) | Deep learning complexity baseline — proves transformers are too data-hungry for small post-shift windows |
 | **Main Model** | **XGBoost (all 4 groups)** | **Best retraining efficiency, native TreeSHAP, fast on small windows** |
 
-All 5 models get the **same features**. The only variable is the algorithm.
+All 4 models get the **same features**. The only variable is the algorithm.
 
 ---
 
@@ -83,7 +82,7 @@ All 5 models get the **same features**. The only variable is the algorithm.
 - Chronological only — no shuffling
 
 ### Phase 3: Model Training & Comparison
-- Train all 5 models on identical features and splits
+- Train all 4 models on identical features and splits
 - Hyperparameter tuning via TimeSeriesSplit(5) on training set
 - XGBoost tuning: learning_rate, max_depth, n_estimators, reg_alpha, reg_lambda
 - LSTM: hidden=128, layers=2, dropout=0.3, lookback=30 (4H bars = 5 days), attention head
@@ -131,7 +130,7 @@ All 5 models get the **same features**. The only variable is the algorithm.
 ## Experiments
 
 ### Experiment 1: Model Comparison
-LSTM vs RF vs Stacked Ensemble vs TFT vs XGBoost — same features, different algorithms.
+LSTM vs RF vs Stacked Ensemble vs XGBoost — same features, different algorithms.
 Table + bar chart. Proves complexity doesn't improve retraining recovery.
 
 ### Experiment 2: Ablation Study
@@ -187,7 +186,6 @@ ShiftGuard/
 │   │   ├── baseline_lstm.py      # Baseline 1: LSTM + Attention
 │   │   ├── baseline_rf.py        # Baseline 2: Random Forest
 │   │   ├── baseline_stacked.py   # Baseline 3: Stacked Ensemble
-│   │   ├── baseline_tft.py       # Baseline 4: TFT
 │   │   └── main_xgboost.py       # Main: XGBoost
 │   ├── detection/
 │   │   ├── scheduled.py          # KS + MMD with calendar
