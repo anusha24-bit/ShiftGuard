@@ -55,10 +55,10 @@ VIX + VIX change, DXY + DXY change, S&P 500 return, oil return, rolling correlat
 
 | Role | Model | Purpose |
 |---|---|---|
-| Baseline 1 | LSTM + Attention (all 4 groups) | Medium complexity — deep sequential model. Proves temporal modeling alone isn't enough |
-| Baseline 2 | Random Forest (all 4 groups) | Low complexity — bagging ensemble. Proves simple tree ensembles can't adapt fast enough |
-| Baseline 3 | Stacked Ensemble: LSTM + RF → Logistic Regression meta (all 4 groups) | Highest complexity — two heterogeneous models combined. Proves complexity doesn't solve retraining |
-| **Main Model** | **XGBoost (all 4 groups)** | **Right-sized — best balance of accuracy, retraining speed, and SHAP compatibility** |
+| Baseline 1 | Random Forest (all 4 groups) | Low complexity, weakest baseline. Simple bagging can't handle non-stationary data |
+| Baseline 2 | LSTM + Attention (all 4 groups) | Medium complexity, stronger than B1. Temporal modeling helps but retrains poorly |
+| Baseline 3 | Stacked Ensemble: LSTM + RF → Logistic Regression meta (all 4 groups) | Highest complexity, best baseline. Even combining both can't beat XGBoost on retraining |
+| **Main Model** | **XGBoost (all 4 groups)** | **Right-sized — wins on adaptation speed despite being simpler than B3** |
 
 All 4 models get the **same features**. The only variable is the algorithm.
 
@@ -183,9 +183,9 @@ ShiftGuard/
 │   │   ├── sentiment.py          # Group 4 features
 │   │   └── build_dataset.py      # Merge all groups + targets
 │   ├── models/
-│   │   ├── baseline_lstm.py      # Baseline 1: LSTM + Attention
-│   │   ├── baseline_rf.py        # Baseline 2: Random Forest
-│   │   ├── baseline_stacked.py   # Baseline 3: Stacked Ensemble
+│   │   ├── baseline_rf.py        # Baseline 1: Random Forest
+│   │   ├── baseline_lstm.py      # Baseline 2: LSTM + Attention
+│   │   ├── baseline_stacked.py   # Baseline 3: Stacked Ensemble (LSTM + RF → LR)
 │   │   └── main_xgboost.py       # Main: XGBoost
 │   ├── detection/
 │   │   ├── scheduled.py          # KS + MMD with calendar
