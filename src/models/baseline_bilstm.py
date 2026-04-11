@@ -1,11 +1,10 @@
 """
-Baseline 1: LSTM (Unidirectional) — Technical Features Only
-Features: RSI(14), EMA(12/26), SMA(20/50), Volume
-30-bar lookback (= 5 trading days).
+Baseline 2: Bidirectional LSTM + Custom Attention — All Features
+All 4 feature groups (~70 features), 30-bar lookback.
 Trains on 2015-2019, validates on 2020, tests on 2021-2025.
 
 Usage:
-    python src/models/baseline_lstm.py
+    python src/models/baseline_bilstm.py
 """
 import sys
 import os
@@ -23,7 +22,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, PROJECT_ROOT)
 
 PROCESSED_DIR = os.path.join(PROJECT_ROOT, 'data', 'processed')
-RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results', 'baseline1')
+RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results', 'baseline2')
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # --- Config ---
@@ -37,14 +36,32 @@ EPOCHS = 100
 PATIENCE = 15
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# Technical features only: RSI, EMA, SMA, volume
-TECHNICAL_FEATURES = ['rsi_14', 'ema_12', 'ema_26', 'sma_20', 'sma_50', 'volume']
+EXCLUDE_COLS = ['datetime_utc', 'date', 'session', 'target_return', 'target_direction']
 
 
 # ============================================================
-# Model — plain unidirectional LSTM (simplest baseline)
+# Custom Attention (Bahdanau / additive)
 # ============================================================
-class LSTMBaseline(nn.Module):
+class CustomAttention(nn.Module):
+    """Additive attention with learnable query vector."""
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.W = nn.Linear(hidden_size, hidden_size)
+        self.v = nn.Linear(hidden_size, 1, bias=False)
+
+    def forward(self, lstm_output):
+        # lstm_output: (batch, seq, hidden*2) for BiLSTM
+        energy = torch.tanh(self.W(lstm_output))    # (batch, seq, hidden*2)
+        scores = self.v(energy).squeeze(-1)          # (batch, seq)
+        weights = torch.softmax(scores, dim=1)       # (batch, seq)
+        context = (lstm_output * weights.unsqueeze(-1)).sum(dim=1)  # (batch, hidden*2)
+        return context, weights
+
+
+# ============================================================
+# Model — BiLSTM + Custom Attention
+# ============================================================
+class BiLSTMAttention(nn.Module):
     def __init__(self, input_size, hidden_size=128, num_layers=2, dropout=0.3):
         super().__init__()
         self.lstm = nn.LSTM(
@@ -53,25 +70,31 @@ class LSTMBaseline(nn.Module):
             num_layers=num_layers,
             dropout=dropout,
             batch_first=True,
+            bidirectional=True,
         )
+        self.attention = CustomAttention(hidden_size * 2)
         self.fc = nn.Sequential(
-            nn.Linear(hidden_size, 64),
+            nn.Linear(hidden_size * 2, 128),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(64, 32),
+            nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(32, 1),
+            nn.Linear(64, 1),
         )
 
     def forward(self, x):
-        lstm_out, _ = self.lstm(x)          # (batch, seq, hidden)
-        last_hidden = lstm_out[:, -1, :]    # take last timestep
-        return self.fc(last_hidden)
+        lstm_out, _ = self.lstm(x)                      # (batch, seq, hidden*2)
+        context, attn_weights = self.attention(lstm_out) # (batch, hidden*2)
+        return self.fc(context)
 
 
 # ============================================================
 # Data helpers
 # ============================================================
+def get_feature_cols(df):
+    return [c for c in df.columns if c not in EXCLUDE_COLS]
+
+
 def create_sequences(data, targets, lookback):
     X, y = [], []
     for i in range(lookback, len(data)):
@@ -169,16 +192,13 @@ def train_model(model, train_loader, val_X, val_y, epochs, patience, lr):
 # ============================================================
 def run_pair(pair_name):
     print(f"\n{'='*60}")
-    print(f"BASELINE 1: LSTM (Technical Only) — {pair_name}")
+    print(f"BASELINE 2: BiLSTM + Attention — {pair_name}")
     print(f"{'='*60}")
 
     # Load
     df = pd.read_csv(os.path.join(PROCESSED_DIR, f'{pair_name}_features.csv'))
-
-    # Use ONLY technical features
-    feature_cols = [c for c in TECHNICAL_FEATURES if c in df.columns]
-    print(f"  Features ({len(feature_cols)}): {feature_cols}")
-    print(f"  Rows: {len(df)}")
+    feature_cols = get_feature_cols(df)
+    print(f"  Features: {len(feature_cols)}, Rows: {len(df)}")
 
     # Split
     train_df, val_df, test_df = split_data(df)
@@ -220,7 +240,7 @@ def run_pair(pair_name):
 
     # Model
     input_size = X_train.shape[2]
-    model = LSTMBaseline(input_size, HIDDEN_SIZE, NUM_LAYERS, DROPOUT).to(DEVICE)
+    model = BiLSTMAttention(input_size, HIDDEN_SIZE, NUM_LAYERS, DROPOUT).to(DEVICE)
     print(f"  Model params: {sum(p.numel() for p in model.parameters()):,}")
 
     # Train
@@ -246,17 +266,17 @@ def run_pair(pair_name):
         'actual': y_test,
         'predicted': test_pred,
     })
-    pred_path = os.path.join(RESULTS_DIR, f'baseline1_lstm_{pair_name}.csv')
+    pred_path = os.path.join(RESULTS_DIR, f'baseline2_bilstm_{pair_name}.csv')
     pred_df.to_csv(pred_path, index=False)
     print(f"\n  Predictions saved: {pred_path}")
 
     # Save training curves
     curves_df = pd.DataFrame({'epoch': range(1, len(train_losses)+1), 'train_loss': train_losses, 'val_loss': val_losses})
-    curves_path = os.path.join(RESULTS_DIR, f'baseline1_lstm_{pair_name}_curves.csv')
+    curves_path = os.path.join(RESULTS_DIR, f'baseline2_bilstm_{pair_name}_curves.csv')
     curves_df.to_csv(curves_path, index=False)
 
     # Save model
-    model_path = os.path.join(RESULTS_DIR, f'baseline1_lstm_{pair_name}.pt')
+    model_path = os.path.join(RESULTS_DIR, f'baseline2_bilstm_{pair_name}.pt')
     torch.save(model.state_dict(), model_path)
     print(f"  Model saved: {model_path}")
 
@@ -271,7 +291,7 @@ if __name__ == '__main__':
 
     # Summary table
     print(f"\n{'='*60}")
-    print("BASELINE 1: LSTM (Technical Only) — Summary")
+    print("BASELINE 2: BiLSTM + Attention — Summary")
     print(f"{'='*60}")
     print(f"{'Pair':<10} {'MAE':<10} {'RMSE':<10} {'Dir Acc':<10} {'F1':<10}")
     print("-" * 50)
@@ -279,7 +299,7 @@ if __name__ == '__main__':
         print(f"{pair:<10} {r['mae']:<10.6f} {r['rmse']:<10.6f} {r['dir_acc']:<10.4f} {r['f1']:<10.4f}")
 
     # Save summary
-    summary_path = os.path.join(RESULTS_DIR, 'baseline1_lstm_summary.json')
+    summary_path = os.path.join(RESULTS_DIR, 'baseline2_bilstm_summary.json')
     with open(summary_path, 'w') as f:
         json.dump(all_results, f, indent=2)
     print(f"\nSummary saved: {summary_path}")
