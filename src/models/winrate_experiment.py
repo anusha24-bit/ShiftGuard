@@ -63,7 +63,8 @@ DIR_PARAMS = {
 }
 
 TRAIN_BARS = 180 * 6  # 6 months for 4H
-STEP_BARS = 180       # 1 month
+STEP_BARS = 6         # 1 day (6 × 4H bars) — check triggers daily
+RETRAIN_COOLDOWN = 30 # minimum 30 bars (~5 days) between retrains
 CONFIDENCE_THRESHOLD = 0.55  # only trade when regime confidence > this
 
 
@@ -248,12 +249,19 @@ def run_pair(pair_name):
     regime_model.fit(X_regime, y_regime, verbose=False)
 
     regime_retrain_count = 0
+    bars_since_last_retrain = RETRAIN_COOLDOWN  # allow retrain on first trigger
+    retrain_reasons_log = []
+    total_steps = (total - TRAIN_BARS) // STEP_BARS
 
     while cursor + STEP_BARS <= total:
         step_end = cursor + STEP_BARS
         chunk = df.iloc[cursor:step_end]
         X_chunk = chunk[feature_cols].values
         actual_returns = chunk['target_return'].values
+
+        # Progress every 500 steps
+        if step % 500 == 0:
+            print(f"    step {step}/{total_steps} ...")
 
         # --- Strategy 1: Technical signals ---
         tech_signals = strategy_technical(chunk)
@@ -301,9 +309,41 @@ def run_pair(pair_name):
                 'regime_confidence': regime_confidence[i],
             })
 
-        # Retrain regime model if regime changed in this chunk
-        has_change = chunk['regime_changed'].sum() > 0
-        if has_change:
+        # === RETRAIN TRIGGERS (any of these fires → retrain) ===
+        should_retrain = False
+        retrain_reason = ''
+
+        # Trigger 1: Regime label changed
+        if chunk['regime_changed'].sum() > 0:
+            should_retrain = True
+            retrain_reason = 'regime_change'
+
+        # Trigger 2: Vol spike (vol_ratio > 2.5 = short-term vol is 2.5x long-term)
+        if 'vol_ratio' in chunk.columns:
+            vol_spikes = (chunk['vol_ratio'] > 2.5).sum()
+            if vol_spikes >= 1:
+                should_retrain = True
+                retrain_reason = 'vol_spike'
+
+        # Trigger 3: Rolling win rate dropped below 45% (model degrading)
+        if len(all_records) >= 60:
+            recent = all_records[-60:]
+            recent_sg = [(r['sg_signal'] * r['actual_return']) > 0
+                         for r in recent if r['sg_signal'] != 0]
+            if len(recent_sg) >= 10:
+                recent_wr = sum(recent_sg) / len(recent_sg)
+                if recent_wr < 0.45:
+                    should_retrain = True
+                    retrain_reason = 'performance_drop'
+
+        # Trigger 4: Large event surprise (calendar-driven shift)
+        if 'event_surprise' in chunk.columns:
+            big_surprise = (chunk['event_surprise'].abs() > chunk['event_surprise'].abs().quantile(0.95) if len(chunk) > 5 else False)
+            if isinstance(big_surprise, pd.Series) and big_surprise.sum() > 0:
+                should_retrain = True
+                retrain_reason = 'event_surprise'
+
+        if should_retrain and bars_since_last_retrain >= RETRAIN_COOLDOWN:
             train_start = max(0, step_end - TRAIN_BARS)
             X_retrain = df.iloc[train_start:step_end][feature_cols].values
             y_retrain = df.iloc[train_start:step_end]['target_market_state'].values
@@ -317,7 +357,10 @@ def run_pair(pair_name):
             regime_model = xgb.XGBClassifier(**REGIME_PARAMS)
             regime_model.fit(X_retrain, y_retrain, verbose=False)
             regime_retrain_count += 1
+            bars_since_last_retrain = 0
+            retrain_reasons_log.append((str(chunk['datetime_utc'].iloc[0]), retrain_reason))
 
+        bars_since_last_retrain += STEP_BARS
         step += 1
         cursor = step_end
 
@@ -346,13 +389,19 @@ def run_pair(pair_name):
         print(f"    Total Return:   {r['total_return']:.6f}")
 
     results['regime_retrains'] = regime_retrain_count
+    results['retrain_log'] = retrain_reasons_log
 
     # Save
     records_df.to_csv(os.path.join(RESULTS_DIR, f'{pair_name}_winrate_trades.csv'), index=False)
     with open(os.path.join(RESULTS_DIR, f'{pair_name}_winrate_summary.json'), 'w') as f:
         json.dump(results, f, indent=2)
 
-    print(f"\n  Regime model retrained: {regime_retrain_count} times")
+    print(f"\n  Regime model retrained: {regime_retrain_count} times (cooldown={RETRAIN_COOLDOWN} bars)")
+    if retrain_reasons_log:
+        reason_counts = {}
+        for _, reason in retrain_reasons_log:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        print(f"  Retrain reasons: {reason_counts}")
     print(f"  Saved to results/winrate/")
 
     return results
