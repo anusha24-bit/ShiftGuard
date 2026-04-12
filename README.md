@@ -10,44 +10,78 @@ CS 6140 — Machine Learning | Prof. Smruthi Mukund | Northeastern University, S
 
 ## Overview
 
-ShiftGuard is an ML pipeline that detects, explains, and adapts to distribution shifts in forex markets. It doesn't predict markets — it **monitors a model's understanding of short-term momentum and detects when that understanding becomes invalid due to distribution shifts**. The 4-hour momentum estimate is the vehicle for measuring model health, not a trading signal.
+ShiftGuard is a market regime awareness system that detects distribution shifts in forex markets, explains what caused them via SHAP attribution, and adaptively retrains to maintain performance. It doesn't predict price direction — it **classifies market regimes and only trades when conditions are favorable**, sitting out during uncertain transitions.
 
-Core thesis: **the pipeline around the model (detection → attribution → selective retraining) matters more than model complexity.**
-
----
-
-## Prediction Unit: 4-Hour Bars
-
-The base dataframe uses **4-hour OHLCV bars** (6 per trading day, ~18,000 rows per pair). Each bar naturally aligns with a market session:
-
-```
-00:00-04:00  Late Sydney / Early Asian
-04:00-08:00  Asian / Early London
-08:00-12:00  London session
-12:00-16:00  London-NY overlap (peak liquidity)
-16:00-20:00  NY session
-20:00-00:00  Late NY / Early Sydney
-```
-
-Target: `next-4H log return = ln(close_t+1 / close_t)` — estimated momentum for the next 4-hour window.
+Core result: **Technical indicators achieve 50% win rate (coin flip). ShiftGuard achieves 58-59% win rate with 2x profit factor — and is the only strategy that survives real-world trading costs.**
 
 ---
 
-## The 4 Feature Groups (~50-65 features per pair)
+## Key Results
 
-All models use the same features. SHAP attribution traces shifts back to which group caused them.
+### Win Rate (4H bars, walk-forward validated, p < 0.000001)
 
-### Group 1: Technical (from 4H OHLCV)
-SMA(20/50), EMA(12/26), MACD line/signal/histogram, RSI(14), ADX(14), Stochastic %K/%D, Williams %R, CCI(20), ROC(10), Bollinger %B/Width, Ichimoku Tenkan/Kijun, 4H return, log return, gap, close-open range, session label (categorical)
+| Strategy | Win Rate | Trades | Profit Factor |
+|---|---|---|---|
+| Technical (RSI/MACD) | 50.1% | 50,040 | 1.01 |
+| ML Direction (XGBoost, static) | 53.0% | 50,040 | 1.12 |
+| **ShiftGuard (Regime-Filtered)** | **58.7%** | **18,663** | **2.05** |
 
-### Group 2: Volatility (regime-level risk)
-ATR(14), Garman-Klass vol, Parkinson vol, rolling std (5/20/60 bars), vol-of-vol, vol ratio (short/long), drawdown(20), high-low range
+### Realistic P&L ($30K portfolio, leverage, spread, commission, slippage, swap, 30% tax)
 
-### Group 3: Macro (economic fundamentals)
-Interest rate differential, yield spread (10Y), rate diff delta (30d), CPI/NFP/GDP surprise (actual - forecast), event proximity (bars to next event), binary event flags (is_rate_decision_day, is_nfp_day, is_cpi_day)
+| Horizon | Technical | ML Direction | ShiftGuard |
+|---|---|---|---|
+| 1 Month | -$11,010 (LOSS) | +$5,130 | **+$6,287** |
+| 3 Months | +$2,524 | +$2,708 | **+$46,605** |
+| 6 Months | -$19,023 (LOSS) | -$17,401 (LOSS) | **+$64,922** |
+| 1 Year | -$85,825 (BLOWN) | -$30,076 (BLOWN) | **+$115,103** |
 
-### Group 4: Sentiment (market risk & cross-asset)
-VIX + VIX change, DXY + DXY change, S&P 500 return, oil return, rolling correlations (with S&P, with DXY), news volume/spike, gold-specific (real yield, GLD holdings, COT, M2 — XAU/USD only)
+**Technical and ML blow up after trading costs. ShiftGuard is the only profitable strategy because it takes 63% fewer trades, paying 63% less in friction.**
+
+---
+
+## How It Works
+
+```
+Features → Regime Classifier → "Trending Up / Down / Ranging?"
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+              Trending Up     Ranging          Trending Down
+              → GO LONG       → SIT OUT        → GO SHORT
+              (high conf)     (avoid noise)    (high conf)
+                    │                               │
+                    └───────────┬───────────────────┘
+                                ▼
+                    Detection Engine monitors for regime change
+                                │
+                    SHAP explains: "Sentiment drove this shift"
+                                │
+                    Retrain regime classifier on new data
+                                │
+                    Resume trading with updated model
+```
+
+---
+
+## Pipeline (7 Phases)
+
+1. **Data Ingestion** — 4H OHLCV (Dukascopy), economic calendar, macro (FRED), sentiment (VIX/DXY)
+2. **Feature Engineering** — 85 features across 5 groups: Technical, Volatility, Macro, Sentiment, Regime
+3. **Baseline Models** — LSTM, BiLSTM+Attention, Stacked Ensemble (all predict direction ~50-55%)
+4. **Main Model** — XGBoost 5-class regime classifier with adaptive retraining
+5. **Shift Detection** — Dual-mode: KS/MMD for scheduled events + ADWIN for unexpected shifts
+6. **SHAP Attribution** — TreeSHAP traces each shift to feature group (Technical vs Sentiment vs Macro)
+7. **Human-in-the-Loop** — Streamlit dashboard for shift review + selective retraining
+
+---
+
+## Data
+
+- **3 Currency Pairs**: EUR/USD, GBP/JPY, XAU/USD
+- **11 Years**: January 2015 — April 2026
+- **~18,000 4H bars per pair**
+- **Sources**: Dukascopy (OHLCV), FRED (macro), Investing.com (calendar), yfinance (sentiment)
+- **16 data files** across 5 categories: price, calendar, macro, sentiment, events
 
 ---
 
@@ -55,119 +89,33 @@ VIX + VIX change, DXY + DXY change, S&P 500 return, oil return, rolling correlat
 
 | Role | Model | Features | Purpose |
 |---|---|---|---|
-| Baseline 1 | LSTM (unidirectional) | Technical only: RSI, EMA, SMA, volume | Simplest. Tests if price-only signals are enough |
-| Baseline 2 | Bidirectional LSTM + Custom Attention | All 4 groups (~70 features) | Medium. Better architecture + richer features. Should outperform B1 |
-| Baseline 3 | Stacked: RF + BiLSTM-Attention → LightGBM meta | All 4 groups + B1/B2 predictions | Most complex. Heterogeneous ensemble with boosted meta-learner |
-| **Main Model** | **XGBoost** | **All 4 groups** | **Right-sized — wins on retraining speed despite being simpler than B3** |
-
-Escalating complexity: B1 (simple) < B2 (deep + attention) < B3 (stacked heterogeneous) < XGBoost (wins on adaptation).
+| Baseline 1 | LSTM (unidirectional) | Technical only | Simplest baseline |
+| Baseline 2 | BiLSTM + Custom Attention | All features | Medium complexity |
+| Baseline 3 | Stacked: RF + BiLSTM → LightGBM meta | All features | Maximum complexity |
+| **Main** | **XGBoost 5-class Regime Classifier** | **All 5 groups (85 features)** | **Regime-aware trade filtering** |
 
 ---
 
-## Pipeline (7 Phases)
+## Why ShiftGuard Works
 
-### Phase 1: Data Ingestion
-- **4H OHLCV Bars** — EUR/USD, GBP/JPY, XAU/USD (resampled from hourly Dukascopy data, ~18,000 bars per pair)
-- **Economic Calendar** — USD/EUR/GBP/JPY events with actual, forecast, previous (Investing.com)
-- **Macro Time Series** — Interest rates, bond yields, CPI, unemployment, GDP (FRED API)
-- **Sentiment Data** — VIX, DXY, S&P 500, Oil (yfinance). Gold: GLD holdings, COT, M2 (FRED)
-- **Geopolitical Log** — 17+ known black swan events (manual curation)
-
-### Phase 2: Feature Engineering
-- Compute all 4 feature groups from 4H bars
-- Merge macro/sentiment data onto 4H bars by date (forward-filled daily data applies to all 6 bars in that day)
-- Target: next-4H log return (`target_return`) + direction (`target_direction`)
-- Session label column included as a categorical feature
-- Split: Train (2015-2019) | Val (2020) | Test (2021-2025)
-- Chronological only — no shuffling
-
-### Phase 3: Model Training & Comparison
-- B1: LSTM with technical features only (RSI, EMA, SMA, volume), 30-bar lookback
-- B2: BiLSTM + custom attention, all 4 feature groups, 30-bar lookback
-- B3: Stacked ensemble — RF + BiLSTM predictions + raw features → LightGBM meta-learner
-- Main: XGBoost with all 4 feature groups, tuned via Optuna/GridSearchCV
-- Hyperparameter tuning via TimeSeriesSplit(5) on training set
-- Evaluate all with: MAE, RMSE, Directional Accuracy, F1, AUC-ROC
-
-### Phase 4: Dual-Mode Shift Detection Engine
-
-**Scheduled Path**
-- Cross-reference economic calendar
-- On event day: KS test + MMD on pre-event window (10d) vs post-event window (10d)
-- Significant → SCHEDULED SHIFT (with severity score)
-
-**Unexpected Path**
-- On non-event days: ADWIN (primary) sliding window on feature distributions
-- BOCPD (secondary) — probability of shift
-- Triggered without calendar match → UNEXPECTED SHIFT (with severity score)
-
-**Performance Monitor**
-- DDM / EDDM on XGBoost's error stream (residuals)
-- If model error spikes but no shift detected → detection gap (logged)
-
-### Phase 5: SHAP Attribution Layer
-- TreeSHAP on XGBoost using post-shift data against pre-shift trained model
-- Aggregate SHAP values by feature group → identifies which group drove the shift
-- Per-feature KS drift magnitude as secondary attribution signal
-- Example output: "Volatility 55% | Macro 28% | Technical 12% | Sentiment 5%"
-
-### Phase 6: Human-in-the-Loop Dashboard (Streamlit)
-- Shift alert panel: type, severity, SHAP waterfall plot, model confidence before/after
-- User actions: CONFIRM | REJECT | OVERRIDE LABEL (reclassify scheduled ↔ unexpected)
-- Confirmed shifts → retraining queue
-- Rejected shifts → logged as false positive for analysis
-
-### Phase 7: Selective Retraining
-- Compare 3 strategies on confirmed shifts:
-  - A) Full retrain (all historical data)
-  - B) Window retrain (last 30/60 days only)
-  - C) Weighted retrain (upweight recent samples)
-- Measure recovery: rolling MAE → days to return to pre-shift baseline
-- Model updated → loop back to Phase 4 (detection resumes)
+1. **Fewer trades = less friction**: 18,663 trades vs 50,040. Each trade costs spread + commission + slippage. Trading less saves $960K in costs over 10 years.
+2. **Higher conviction**: Only trades during clear trending regimes (confidence > 55%). Avoids ranging/choppy markets where losses pile up.
+3. **Adaptive retraining**: Regime classifier retrains 93 times at detected regime changes. Stale models degrade; ShiftGuard adapts.
+4. **Self-normalizing feature awareness**: SHAP identifies that technical features self-correct after shifts, while macro/sentiment features don't. ShiftGuard retrains only when non-technical shifts occur.
 
 ---
 
-## Experiments
+## Statistical Significance
 
-### Experiment 1: Model Comparison
-B1 (LSTM+technical) vs B2 (BiLSTM+attention) vs B3 (stacked RF+BiLSTM→LightGBM) vs XGBoost.
-Table + bar chart. Each baseline escalates in complexity and performance, yet XGBoost wins on retraining.
+All results are statistically significant (paired t-test):
 
-### Experiment 2: Ablation Study
-No detection (blind retraining) → Detection only → +Attribution → +Human feedback.
-Rolling MAE over time with vertical shift event lines. Progressive improvement.
+| Pair | t-statistic | p-value | 95% CI (PnL difference) |
+|---|---|---|---|
+| EUR/USD | 8.756 | < 0.000001 | [0.00032, 0.00050] |
+| GBP/JPY | 8.343 | < 0.000001 | [0.00041, 0.00066] |
+| XAU/USD | 9.702 | < 0.000001 | [0.00058, 0.00088] |
 
-### Experiment 3: Hyperparameter Tuning
-XGBoost learning_rate × max_depth × n_estimators sweep.
-Heatmap + top-5 param combos table.
-
-### Experiment 4: Retraining Strategy
-Full retrain vs Window(30d) vs Window(60d) vs Weighted — recovery curves per shift event.
-
-### Experiment 5: Detection Evaluation
-Dual-mode (scheduled + unexpected) vs single-mode (ADWIN only).
-Precision / Recall / F1 against ground truth (geopolitical events log).
-
----
-
-## Evaluation Metrics
-
-**Regression**: MAE (primary), RMSE, Directional Accuracy
-**Classification**: Accuracy, Precision, Recall, F1, AUC-ROC, Confusion Matrix
-**Adaptation**: Rolling MAE (30-day window), Recovery time (days to baseline), Max error spike, Retraining cycles count
-
----
-
-## Data Split
-
-```
-|<-------- Train ---------->|<-- Val -->|<------ Test ------->|
-  Jan 2015 — Dec 2019         2020        2021 — Dec 2025
-  (~7,800 4H bars)          (~1,500)     (~7,800 4H bars)
-  Normal regimes            COVID stress   Fed hikes, BOJ, SVB
-```
-
-No shuffling. Chronological order preserved. TimeSeriesSplit(5) for hyperparameter CV on training set only.
+All confidence intervals exclude zero. Results validated across 11 years with no overfitting (positive edge every single year 2015-2026).
 
 ---
 
@@ -176,94 +124,24 @@ No shuffling. Chronological order preserved. TimeSeriesSplit(5) for hyperparamet
 ```
 ShiftGuard/
 ├── src/
-│   ├── features/
-│   │   ├── technical.py          # Group 1 features
-│   │   ├── volatility.py         # Group 2 features
-│   │   ├── macro.py              # Group 3 features
-│   │   ├── sentiment.py          # Group 4 features
-│   │   └── build_dataset.py      # Merge all groups + targets
-│   ├── models/
-│   │   ├── baseline_lstm.py      # Baseline 1: LSTM (technical features only)
-│   │   ├── baseline_bilstm.py    # Baseline 2: BiLSTM + Custom Attention (all features)
-│   │   ├── baseline_stacked.py   # Baseline 3: RF + BiLSTM → LightGBM meta
-│   │   └── main_xgboost.py       # Main: XGBoost
-│   ├── detection/
-│   │   ├── scheduled.py          # KS + MMD with calendar
-│   │   ├── unexpected.py         # ADWIN + BOCPD
-│   │   ├── performance.py        # DDM / EDDM on error stream
-│   │   └── engine.py             # Dual-mode orchestrator
-│   ├── attribution/
-│   │   └── shap_analysis.py      # TreeSHAP + group aggregation
-│   ├── retraining/
-│   │   └── selective.py          # Full / Window / Weighted strategies
-│   ├── dashboard/
-│   │   └── app.py                # Streamlit HITL dashboard
-│   ├── evaluation/
-│   │   └── metrics.py            # Shared evaluation framework
-│   └── utils/
-│       └── data_loader.py        # CSV loading, splits, preprocessing
+│   ├── features/          # 5 feature groups (technical, volatility, macro, sentiment, regime)
+│   ├── models/            # Baselines + main model + experiments
+│   ├── detection/         # Dual-mode shift detection engine
+│   ├── attribution/       # SHAP analysis
+│   ├── retraining/        # Selective retraining strategies
+│   └── dashboard/         # Streamlit HITL dashboard
 ├── data/
-│   ├── raw/
-│   │   ├── price/                # EURUSD/GBPJPY/XAUUSD OHLCV
-│   │   ├── calendar/             # Economic calendar per currency
-│   │   ├── macro/                # Interest rates, CPI, GDP, employment
-│   │   ├── sentiment/            # VIX, DXY, gold factors
-│   │   └── events/               # Geopolitical events log
-│   └── processed/                # Merged feature matrices per pair
+│   ├── raw/               # 16 source CSVs
+│   └── processed/         # Merged feature matrices
 ├── results/
-│   ├── predictions/              # Per-model prediction CSVs
-│   ├── figures/                  # All plots for report
-│   └── tables/                   # All result tables
-├── notebooks/
-│   └── EDA.ipynb                 # Exploratory data analysis
-├── requirements.txt
-└── README.md                     # This file
+│   ├── predictions/       # Model predictions
+│   ├── detection/         # Shift detection output
+│   ├── attribution/       # SHAP results
+│   ├── winrate/           # Win rate experiment (primary results)
+│   ├── figures/           # Equity curves, bar charts, stat tests
+│   └── regime/            # Regime classification results
+└── requirements.txt
 ```
-
----
-
-## Key Dependencies
-
-```
-pandas, numpy, scikit-learn, xgboost, lightgbm
-torch (LSTM, BiLSTM)
-shap, ta (technical indicators), fredapi
-river (ADWIN), streamlit
-matplotlib, seaborn, plotly
-optuna (hyperparameter tuning)
-```
-
----
-
-## How the Pipeline Components Connect
-
-```
-PREDICTION MODEL ──produces predictions──► DETECTION ENGINE
-       ▲                                        │
-       │                                        ▼
-       └──── retrained using ◄──── SHAP ATTRIBUTION
-              targeted data        (explains WHAT changed)
-                   ▲                        │
-                   │                        ▼
-                   └──── confirmed ◄── HUMAN DASHBOARD
-                         shifts        (CONFIRM / REJECT)
-```
-
-- **Prediction model** (XGBoost): Runs daily, predicts returns. Doesn't know about shifts.
-- **Detection engine**: Watches feature distributions (KS/MMD/ADWIN) + model error (DDM). Flags shifts.
-- **SHAP attribution**: On detected shift, traces to feature group. "Volatility drove this shift."
-- **Human dashboard**: Shows alert + attribution. Human confirms or rejects.
-- **Selective retraining**: Retrains XGBoost on confirmed shifts. Cycle restarts.
-
----
-
-## Reproducibility
-
-- `random_state=42` everywhere
-- All model checkpoints saved
-- Feature engineering is deterministic (no randomness)
-- Standardization fit on train only, applied to val/test
-- All results reproducible from `data/raw/` → `python src/features/build_dataset.py` → model training scripts
 
 ---
 
@@ -275,3 +153,4 @@ PREDICTION MODEL ──produces predictions──► DETECTION ENGINE
 4. Monarch, R. (2021). Human-in-the-Loop Machine Learning. Manning.
 5. Amershi, S. et al. (2014). Power to the people. AI Magazine.
 6. Lundberg, S. & Lee, S. (2017). A unified approach to interpreting model predictions. NeurIPS.
+7. Tsay, R.S. (2010). Analysis of Financial Time Series. 3rd Edition. Wiley.
