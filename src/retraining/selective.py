@@ -11,16 +11,20 @@ Measures recovery: rolling MAE → how many bars until model returns to pre-shif
 Usage:
     python src/retraining/selective.py
 """
+from __future__ import annotations
+
 import sys
 import os
 import json
+from typing import Any
 import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import mean_absolute_error
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, PROJECT_ROOT)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 PROCESSED_DIR = os.path.join(PROJECT_ROOT, 'data', 'processed')
 RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results', 'predictions')
@@ -53,11 +57,11 @@ with open(GROUPS_PATH) as f:
     FEATURE_GROUPS = json.load(f)
 
 
-def get_feature_cols(df):
+def get_feature_cols(df: pd.DataFrame) -> list[str]:
     return [c for c in df.columns if c not in EXCLUDE_COLS]
 
 
-def get_shift_events(pair_name):
+def get_shift_events(pair_name: str) -> pd.DataFrame:
     """Load reviewed shifts when available, otherwise fall back to detected shifts."""
     shifts_path = os.path.join(DETECTION_DIR, f'{pair_name}_shifts.csv')
     shifts = pd.read_csv(shifts_path)
@@ -116,7 +120,7 @@ def get_shift_events(pair_name):
     return pd.DataFrame(filtered)
 
 
-def get_group_feature_cols(feature_cols, groups):
+def get_group_feature_cols(feature_cols: list[str], groups: list[str]) -> list[str]:
     wanted = set()
     for group in groups:
         wanted.update(FEATURE_GROUPS.get(group, []))
@@ -124,7 +128,7 @@ def get_group_feature_cols(feature_cols, groups):
     return selected if selected else feature_cols
 
 
-def choose_adaptive_policy(shift_row, feature_cols):
+def choose_adaptive_policy(shift_row: pd.Series, feature_cols: list[str]) -> dict[str, Any]:
     shift_type = str(shift_row.get('type', 'unknown'))
     dominant = str(shift_row.get('dominant_group', 'unknown'))
 
@@ -155,12 +159,21 @@ def choose_adaptive_policy(shift_row, feature_cols):
     }
 
 
-def retrain_no_update(model, X_test_chunk, y_test_chunk):
+def retrain_no_update(
+    model: xgb.XGBRegressor,
+    X_test_chunk: np.ndarray,
+    y_test_chunk: np.ndarray,
+) -> np.ndarray:
     """Strategy A: No retraining — use existing model as-is."""
     return model.predict(X_test_chunk)
 
 
-def retrain_full(df, feature_cols, shift_idx, params):
+def retrain_full(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    shift_idx: int,
+    params: dict[str, Any],
+) -> xgb.XGBRegressor:
     """Strategy B: Full retrain on all data up to shift point."""
     train_data = df.iloc[:shift_idx]
     X = train_data[feature_cols].values
@@ -171,7 +184,13 @@ def retrain_full(df, feature_cols, shift_idx, params):
     return model
 
 
-def retrain_window(df, feature_cols, shift_idx, window_size, params):
+def retrain_window(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    shift_idx: int,
+    window_size: int,
+    params: dict[str, Any],
+) -> xgb.XGBRegressor:
     """Strategy C: Window retrain — only last N bars before shift."""
     start = max(0, shift_idx - window_size)
     train_data = df.iloc[start:shift_idx]
@@ -183,7 +202,13 @@ def retrain_window(df, feature_cols, shift_idx, window_size, params):
     return model
 
 
-def retrain_weighted(df, feature_cols, shift_idx, params, decay=0.995):
+def retrain_weighted(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    shift_idx: int,
+    params: dict[str, Any],
+    decay: float = 0.995,
+) -> xgb.XGBRegressor:
     """Strategy D: Weighted retrain — exponential decay, recent data upweighted."""
     train_data = df.iloc[:shift_idx]
     X = train_data[feature_cols].values
@@ -198,7 +223,13 @@ def retrain_weighted(df, feature_cols, shift_idx, params, decay=0.995):
     return model
 
 
-def retrain_adaptive(df, feature_cols, shift_idx, params, shift_row):
+def retrain_adaptive(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    shift_idx: int,
+    params: dict[str, Any],
+    shift_row: pd.Series,
+) -> tuple[xgb.XGBRegressor, list[str], str]:
     policy = choose_adaptive_policy(shift_row, feature_cols)
     selected_cols = policy['feature_cols']
     mode = policy['mode']
@@ -213,7 +244,11 @@ def retrain_adaptive(df, feature_cols, shift_idx, params, shift_row):
     return model, selected_cols, policy['policy']
 
 
-def compute_recovery_time(rolling_mae, pre_shift_mae, threshold=1.1):
+def compute_recovery_time(
+    rolling_mae: pd.Series | np.ndarray,
+    pre_shift_mae: float,
+    threshold: float = 1.1,
+) -> int:
     """
     How many bars until rolling MAE returns to within threshold × pre-shift level.
     Returns number of bars, or -1 if never recovers.
@@ -225,7 +260,7 @@ def compute_recovery_time(rolling_mae, pre_shift_mae, threshold=1.1):
     return -1
 
 
-def run_retraining_experiment(pair_name):
+def run_retraining_experiment(pair_name: str) -> pd.DataFrame | None:
     """Run all 4 strategies on detected shifts for one pair."""
     print(f"\n{'='*60}")
     print(f"Selective Retraining — {pair_name}")

@@ -1,11 +1,13 @@
 """
 Strong technical baseline for ShiftGuard.
 """
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 
 
-def generate_technical_signals(df):
+def generate_technical_signals(df: pd.DataFrame) -> np.ndarray:
     signals = []
 
     for _, row in df.iterrows():

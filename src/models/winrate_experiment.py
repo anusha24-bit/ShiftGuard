@@ -10,16 +10,20 @@ The key insight: ShiftGuard trades less but wins more.
 Usage:
     python src/models/winrate_experiment.py
 """
+from __future__ import annotations
+
 import sys
 import os
 import json
+from typing import Any
 import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import accuracy_score, f1_score
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, PROJECT_ROOT)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from src.features.regime import compute_regime_features, compute_adaptive_regime_labels
 from src.features.technical import compute_technical_features
@@ -62,11 +66,11 @@ CONFIDENCE_THRESHOLD = 0.55  # only trade when regime confidence > this
 SHIFT_LOOKBACK_BARS = 30
 
 
-def get_feature_cols(df):
+def get_feature_cols(df: pd.DataFrame) -> list[str]:
     return [c for c in df.columns if c not in META_COLS]
 
 
-def create_5class_regime(df):
+def create_5class_regime(df: pd.DataFrame) -> pd.DataFrame:
     """
     5-class market state:
     0: Trending Up + Low Vol
@@ -97,7 +101,7 @@ def create_5class_regime(df):
     return df
 
 
-def evaluate_strategy(signals, actual_returns, name):
+def evaluate_strategy(signals: np.ndarray, actual_returns: np.ndarray, name: str) -> dict[str, Any]:
     """
     Evaluate a trading strategy.
     signal: 1 = long, -1 = short, 0 = no trade
@@ -135,7 +139,7 @@ def evaluate_strategy(signals, actual_returns, name):
     }
 
 
-def load_shift_context(pair_name):
+def load_shift_context(pair_name: str) -> pd.DataFrame:
     shifts_path = os.path.join(DETECTION_DIR, f'{pair_name}_shifts.csv')
     if not os.path.exists(shifts_path):
         return pd.DataFrame()
@@ -161,7 +165,11 @@ def load_shift_context(pair_name):
     return shifts.sort_values('datetime_utc').reset_index(drop=True)
 
 
-def get_recent_shift_context(shifts_df, current_dt, lookback_bars=SHIFT_LOOKBACK_BARS):
+def get_recent_shift_context(
+    shifts_df: pd.DataFrame,
+    current_dt: pd.Timestamp,
+    lookback_bars: int = SHIFT_LOOKBACK_BARS,
+) -> pd.Series | None:
     if shifts_df.empty:
         return None
 
@@ -182,7 +190,7 @@ def get_recent_shift_context(shifts_df, current_dt, lookback_bars=SHIFT_LOOKBACK
     return recent.iloc[0]
 
 
-def choose_shiftguard_policy(shift_ctx):
+def choose_shiftguard_policy(shift_ctx: pd.Series | None) -> str:
     if shift_ctx is None:
         return 'default_regime'
 
@@ -198,7 +206,14 @@ def choose_shiftguard_policy(shift_ctx):
     return 'default_regime'
 
 
-def adaptive_shiftguard_signal(row, tech_signal, ml_signal, regime_state, regime_conf, shift_ctx):
+def adaptive_shiftguard_signal(
+    row: pd.Series,
+    tech_signal: float,
+    ml_signal: float,
+    regime_state: int,
+    regime_conf: float,
+    shift_ctx: pd.Series | None,
+) -> tuple[int, str]:
     policy = choose_shiftguard_policy(shift_ctx)
     bars_since = row.get('bars_since_regime_change', np.inf)
 
@@ -244,7 +259,7 @@ def adaptive_shiftguard_signal(row, tech_signal, ml_signal, regime_state, regime
     return 0, policy
 
 
-def run_pair(pair_name):
+def run_pair(pair_name: str) -> dict[str, Any]:
     print(f"\n{'='*60}")
     print(f"Win Rate Experiment — {pair_name}")
     print(f"{'='*60}")

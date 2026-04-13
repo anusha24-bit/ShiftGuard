@@ -11,17 +11,21 @@ For each shift:
 Usage:
     python src/attribution/shap_analysis.py
 """
+from __future__ import annotations
+
 import sys
 import os
 import json
 import argparse
+from typing import Any
 import numpy as np
 import pandas as pd
 import xgboost as xgb
 import shap
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, PROJECT_ROOT)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 PROCESSED_DIR = os.path.join(PROJECT_ROOT, 'data', 'processed')
 RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results', 'predictions')
@@ -37,11 +41,11 @@ with open(GROUPS_PATH) as f:
     FEATURE_GROUPS = json.load(f)
 
 
-def get_feature_cols(df):
+def get_feature_cols(df: pd.DataFrame) -> list[str]:
     return [c for c in df.columns if c not in EXCLUDE_COLS]
 
 
-def map_feature_to_group(feature_name):
+def map_feature_to_group(feature_name: str) -> str:
     """Map a feature name to its group. Returns 'other' if not found."""
     for group, features in FEATURE_GROUPS.items():
         if feature_name in features:
@@ -52,7 +56,7 @@ def map_feature_to_group(feature_name):
     return 'other'
 
 
-def compute_group_attribution(shap_values, feature_names):
+def compute_group_attribution(shap_values: np.ndarray, feature_names: list[str]) -> dict[str, float]:
     """
     Aggregate SHAP values by feature group.
     Returns dict: {group_name: mean_abs_shap_contribution_pct}
@@ -79,7 +83,13 @@ def compute_group_attribution(shap_values, feature_names):
     return group_pct
 
 
-def analyze_shift(model, df, feature_cols, shift_idx, window=60):
+def analyze_shift(
+    model: xgb.XGBRegressor,
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    shift_idx: int,
+    window: int = 60,
+) -> dict[str, Any] | None:
     """
     Run SHAP analysis around a single shift point.
 
@@ -120,7 +130,7 @@ def analyze_shift(model, df, feature_cols, shift_idx, window=60):
     }
 
 
-def run_attribution(pair_name):
+def run_attribution(pair_name: str) -> pd.DataFrame:
     """Run SHAP attribution for all detected shifts in one pair."""
     print(f"\n{'='*60}")
     print(f"SHAP Attribution — {pair_name}")

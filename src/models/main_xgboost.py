@@ -9,10 +9,13 @@ This model predicts next-bar return and supplies:
 Usage:
     python src/models/main_xgboost.py
 """
+from __future__ import annotations
+
 import json
 import os
 import sys
 import argparse
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -22,7 +25,8 @@ from sklearn.metrics import precision_recall_fscore_support
 from sklearn.model_selection import TimeSeriesSplit
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.insert(0, PROJECT_ROOT)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 PROCESSED_DIR = os.path.join(PROJECT_ROOT, "data", "processed")
 RESULTS_DIR = os.path.join(PROJECT_ROOT, "results", "predictions")
@@ -47,11 +51,11 @@ FAST_PARAM_GRID = {
 }
 
 
-def get_feature_cols(df):
+def get_feature_cols(df: pd.DataFrame) -> list[str]:
     return [c for c in df.columns if c not in EXCLUDE_COLS]
 
 
-def split_data(df):
+def split_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     df = df.copy()
     df["datetime_utc"] = pd.to_datetime(df["datetime_utc"])
     train = df[df["datetime_utc"] < "2020-01-01"].copy()
@@ -60,7 +64,7 @@ def split_data(df):
     return train, val, test
 
 
-def evaluate(y_true, y_pred):
+def evaluate(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     mae = mean_absolute_error(y_true, y_pred)
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     dir_acc = np.mean(np.sign(y_true) == np.sign(y_pred))
@@ -81,7 +85,11 @@ def evaluate(y_true, y_pred):
     }
 
 
-def tune_hyperparams(X_train, y_train, fast=False):
+def tune_hyperparams(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    fast: bool = False,
+) -> tuple[dict[str, Any], pd.DataFrame]:
     grid = FAST_PARAM_GRID if fast else PARAM_GRID
     tscv = TimeSeriesSplit(n_splits=5)
     best_score = float("inf")
@@ -122,7 +130,7 @@ def tune_hyperparams(X_train, y_train, fast=False):
     return best_params, pd.DataFrame(rows).sort_values("cv_mae")
 
 
-def run_pair(pair_name, fast=False):
+def run_pair(pair_name: str, fast: bool = False) -> dict[str, Any]:
     print(f"\n{'=' * 60}")
     print(f"ShiftGuard Main XGBoost - {pair_name}")
     print(f"{'=' * 60}")

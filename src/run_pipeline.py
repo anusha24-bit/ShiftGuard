@@ -10,16 +10,19 @@ This script runs the submission-facing pipeline in order:
 Usage:
     python src/run_pipeline.py
 """
+from __future__ import annotations
+
 import os
 import runpy
 import sys
 import argparse
+from typing import Sequence
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DECISIONS_DIR = os.path.join(PROJECT_ROOT, "results", "decisions")
 
 
-def run_script(relative_path, argv=None):
+def run_script(relative_path: str, argv: Sequence[str] | None = None) -> None:
     script_path = os.path.join(PROJECT_ROOT, relative_path)
     print(f"\n{'=' * 70}")
     print(f"Running {relative_path}")
@@ -30,7 +33,7 @@ def run_script(relative_path, argv=None):
     sys.argv = old_argv
 
 
-def has_review_decisions():
+def has_review_decisions() -> bool:
     if not os.path.exists(DECISIONS_DIR):
         return False
     return any(name.endswith("_decisions.csv") for name in os.listdir(DECISIONS_DIR))

@@ -1,0 +1,1 @@
+"""Attribution package for ShiftGuard."""

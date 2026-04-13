@@ -5,6 +5,8 @@ Orchestrates scheduled, unexpected, and performance drift detectors.
 Usage:
     python src/detection/engine.py
 """
+from __future__ import annotations
+
 import sys
 import os
 import json
@@ -12,7 +14,8 @@ import argparse
 import pandas as pd
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, PROJECT_ROOT)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from src.detection.scheduled import detect_scheduled_shifts
 from src.detection.unexpected import detect_unexpected_shifts
@@ -33,7 +36,7 @@ PAIR_CURRENCIES = {
 }
 
 
-def load_calendar(pair_name):
+def load_calendar(pair_name: str) -> pd.DataFrame:
     """Load combined calendar for the pair's currencies."""
     currencies = PAIR_CURRENCIES.get(pair_name, ['USD'])
     dfs = []
@@ -46,7 +49,7 @@ def load_calendar(pair_name):
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 
-def run_detection(pair_name):
+def run_detection(pair_name: str) -> pd.DataFrame:
     """Run all 3 detectors for one pair."""
     print(f"\n{'='*60}")
     print(f"Detection Engine — {pair_name}")

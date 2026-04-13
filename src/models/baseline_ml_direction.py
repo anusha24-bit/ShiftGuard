@@ -1,7 +1,12 @@
 """
 ML direction baseline for ShiftGuard.
 """
+from __future__ import annotations
+
+from typing import Sequence
+
 import numpy as np
+import pandas as pd
 import xgboost as xgb
 
 
@@ -18,7 +23,7 @@ DIR_PARAMS = {
 }
 
 
-def select_direction_feature_cols(feature_cols):
+def select_direction_feature_cols(feature_cols: Sequence[str]) -> list[str]:
     return [c for c in feature_cols if c not in [
         'atr_pct_short', 'atr_pct_long', 'vol_ratio_5_60', 'vol_ratio_5_20',
         'vol_compressed', 'compression_duration', 'range_contraction',
@@ -28,7 +33,12 @@ def select_direction_feature_cols(feature_cols):
     ]]
 
 
-def train_direction_model(df, feature_cols, start_idx, end_idx):
+def train_direction_model(
+    df: pd.DataFrame,
+    feature_cols: Sequence[str],
+    start_idx: int,
+    end_idx: int,
+) -> tuple[xgb.XGBClassifier, list[str]]:
     base_feature_cols = select_direction_feature_cols(feature_cols)
     X_train = df.iloc[start_idx:end_idx][base_feature_cols].values
     y_train = df.iloc[start_idx:end_idx]['target_dir'].values
@@ -38,7 +48,11 @@ def train_direction_model(df, feature_cols, start_idx, end_idx):
     return model, base_feature_cols
 
 
-def predict_direction_signals(model, df_chunk, base_feature_cols):
+def predict_direction_signals(
+    model: xgb.XGBClassifier,
+    df_chunk: pd.DataFrame,
+    base_feature_cols: Sequence[str],
+) -> np.ndarray:
     X_chunk = df_chunk[base_feature_cols].values
     pred = model.predict(X_chunk)
     return np.where(pred == 1, 1, -1)
