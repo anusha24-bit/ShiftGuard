@@ -11,6 +11,7 @@ import sys
 import os
 import json
 import argparse
+from typing import Any
 import pandas as pd
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -34,6 +35,37 @@ PAIR_CURRENCIES = {
     'GBPJPY': ['GBP', 'JPY'],
     'XAUUSD': ['USD'],
 }
+
+
+def load_prediction_window(pair_name: str) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    """Infer the active evaluation window from the monitored-model predictions."""
+    pred_path = os.path.join(RESULTS_DIR, f'xgboost_{pair_name}_predictions.csv')
+    if not os.path.exists(pred_path):
+        return None
+    pred_df = pd.read_csv(pred_path)
+    if pred_df.empty or 'datetime_utc' not in pred_df.columns:
+        return None
+    pred_df['datetime_utc'] = pd.to_datetime(pred_df['datetime_utc'], errors='coerce')
+    pred_df = pred_df.dropna(subset=['datetime_utc'])
+    if pred_df.empty:
+        return None
+    return pred_df['datetime_utc'].min(), pred_df['datetime_utc'].max()
+
+
+def filter_shifts_to_prediction_window(
+    shifts: list[dict[str, Any]],
+    prediction_window: tuple[pd.Timestamp, pd.Timestamp] | None,
+) -> list[dict[str, Any]]:
+    """Keep only shifts that fall inside the active monitored-model prediction window."""
+    if prediction_window is None:
+        return shifts
+    window_start, window_end = prediction_window
+    filtered: list[dict[str, Any]] = []
+    for shift in shifts:
+        shift_dt = pd.to_datetime(shift.get('datetime_utc'), errors='coerce')
+        if pd.notna(shift_dt) and window_start <= shift_dt <= window_end:
+            filtered.append(shift)
+    return filtered
 
 
 def load_calendar(pair_name: str) -> pd.DataFrame:
@@ -67,15 +99,18 @@ def run_detection(pair_name: str) -> pd.DataFrame:
     # Get set of event dates for filtering unexpected shifts
     high_events = calendar_df[calendar_df['impact_level'] == 'High']
     calendar_dates = set(high_events['date'].dt.date.astype(str).values)
+    prediction_window = load_prediction_window(pair_name)
 
     # --- 1. Scheduled shifts ---
     print("\n  [1/3] Detecting scheduled shifts (KS + MMD)...")
     scheduled = detect_scheduled_shifts(df, calendar_df, feature_cols, window_size=60)
+    scheduled = filter_shifts_to_prediction_window(scheduled, prediction_window)
     print(f"    Found: {len(scheduled)} scheduled shifts")
 
     # --- 2. Unexpected shifts ---
     print("\n  [2/3] Detecting unexpected shifts (ADWIN)...")
     unexpected = detect_unexpected_shifts(df, feature_cols, calendar_dates, delta=0.002)
+    unexpected = filter_shifts_to_prediction_window(unexpected, prediction_window)
     print(f"    Found: {len(unexpected)} unexpected shifts")
 
     # --- 3. Performance drift ---
@@ -86,6 +121,8 @@ def run_detection(pair_name: str) -> pd.DataFrame:
     if os.path.exists(pred_path):
         pred_df = pd.read_csv(pred_path)
         perf_drifts, perf_warnings = detect_performance_drift(pred_df)
+        perf_drifts = filter_shifts_to_prediction_window(perf_drifts, prediction_window)
+        perf_warnings = filter_shifts_to_prediction_window(perf_warnings, prediction_window)
         print(f"    Found: {len(perf_drifts)} drifts, {len(perf_warnings)} warnings")
     else:
         print(f"    Skipped — no predictions file found at {pred_path}")

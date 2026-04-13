@@ -76,7 +76,7 @@ Classification and trading-oriented experiments may still exist locally as suppo
 
 ## Current System Behavior
 
-The current local version of ShiftGuard now supports:
+This repository currently supports:
 
 - a connected end-to-end pipeline from model outputs to detection, attribution, dashboard review, and retraining
 - a Streamlit dashboard with **auto-confirm by default** and **human override only when necessary**
@@ -85,7 +85,7 @@ The current local version of ShiftGuard now supports:
   - `technical` shift -> technical followthrough posture
   - `scheduled + macro/sentiment` shift -> event-aligned posture
   - `unexpected / volatility` shift -> defensive shock posture
-- an initial **adaptive retraining experiment** where retrain policy can depend on shift type and dominant attribution group
+- adaptive retraining logic in [src/retraining/selective.py](/C:/Users/Sohan%20M/Desktop/Shiftguard/src/retraining/selective.py), where retrain policy can depend on shift type and dominant attribution group
 
 This means attribution is no longer only descriptive; it is beginning to control downstream behavior.
 
@@ -159,12 +159,6 @@ Core feature/data pipeline:
 - [src/features/macro.py](/C:/Users/Sohan%20M/Desktop/Shiftguard/src/features/macro.py)
 - [src/features/sentiment.py](/C:/Users/Sohan%20M/Desktop/Shiftguard/src/features/sentiment.py)
 
-## Legacy / Pivoted Work
-
-Earlier pivots explored regime classification, live signal generation, and profit-first analysis. Those superseded experiments are no longer part of the active repo tree and should not be treated as the canonical submission path.
-
-Legacy materials were moved out of the cleaned repository into a separate local backup, so the repo now reflects only the current submission-facing workflow.
-
 ## How To Run Locally
 
 ### Full canonical flow
@@ -186,6 +180,8 @@ The supplementary stacked baseline is not part of `src/run_pipeline.py`; run it 
 python src/models/baseline_stacked.py
 ```
 
+By default, the pipeline pauses for review after attribution. If you already have approved decision files for the selected pairs and want to continue into retraining immediately, rerun with `--use-existing-decisions`.
+
 If no review decisions are present yet, the pipeline pauses and expects:
 
 ```bash
@@ -195,7 +191,7 @@ streamlit run src/dashboard/app.py
 After reviewing or overriding shifts in the dashboard, rerun:
 
 ```bash
-python src/retraining/selective.py
+python src/retraining/selective.py --pairs EURUSD GBPJPY XAUUSD
 ```
 
 ### Step-by-step local flow
@@ -243,7 +239,7 @@ The goal is for **shift type + dominant cause** to determine both:
 
 ### Shift detection / attribution
 
-Current cross-pair shift outputs generated locally:
+Tracked cross-pair shift outputs in `results/detection/`:
 
 - `EURUSD`: `166` scheduled, `32` unexpected, `198` total
 - `GBPJPY`: `118` scheduled, `118` unexpected, `236` total
@@ -257,7 +253,7 @@ Sample attribution pattern:
 
 ### Selective retraining summary
 
-Current saved retraining summaries:
+Tracked saved retraining summaries in `results/retraining/`:
 
 - `EURUSD`
   - No retrain: `MAE 0.001220`, recovery `45.7` bars
@@ -294,14 +290,33 @@ The strongest evaluation framing for this project is:
 
 The main academic claim is not that ShiftGuard maximizes raw trading profit. The claim is that it provides a more structured and interpretable way to handle shift in a non-stationary financial environment.
 
-## Current Repo Notes
+## Reproducibility
 
 - The canonical monitored model writes outputs to `results/predictions/`.
 - The dashboard reads from `results/detection/`, `results/attribution/`, `results/predictions/`, and writes decisions to `results/decisions/`.
 - The dashboard currently auto-confirms new shifts by default and queues them for retraining unless a human overrides or rejects them.
-- Selective retraining now consumes approved dashboard decisions when available.
-- `src/models/winrate_experiment.py` now contains the first adaptive trading-policy implementation, currently explored on `EURUSD`.
-- `results/archive/` contains historical experiments and should be treated as non-canonical.
+- Selective retraining consumes approved dashboard decisions when available.
+- `src/models/winrate_experiment.py` contains the adaptive trading-policy implementation used by the trading comparison path.
+- Analysis/reporting scripts live in `src/analysis/` and tracked result artifacts live under `results/`.
+
+To regenerate the tracked outputs from the canonical path:
+
+```bash
+python src/features/build_dataset.py
+python src/run_pipeline.py --pairs EURUSD GBPJPY XAUUSD --fast
+streamlit run src/dashboard/app.py
+python src/retraining/selective.py --pairs EURUSD GBPJPY XAUUSD
+```
+
+## Tests and CI
+
+- Unit tests live in `tests/`.
+- GitHub Actions runs the test suite on every push and pull request.
+- The tests currently cover:
+  - review gating for the pipeline,
+  - prediction-window filtering for detected shifts,
+  - SHAP group percentages,
+  - reviewer-reject handling in selective retraining.
 
 ## References
 

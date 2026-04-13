@@ -33,6 +33,8 @@ RESULTS_DIR = os.path.join(PROJECT_ROOT, "results", "predictions")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 EXCLUDE_COLS = ["datetime_utc", "date", "session", "target_return", "target_direction", "volume"]
+TRAIN_RATIO = 0.70
+VAL_RATIO = 0.15
 
 PARAM_GRID = {
     "learning_rate": [0.01, 0.05, 0.1],
@@ -58,9 +60,15 @@ def get_feature_cols(df: pd.DataFrame) -> list[str]:
 def split_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     df = df.copy()
     df["datetime_utc"] = pd.to_datetime(df["datetime_utc"])
-    train = df[df["datetime_utc"] < "2020-01-01"].copy()
-    val = df[(df["datetime_utc"] >= "2020-01-01") & (df["datetime_utc"] < "2021-01-01")].copy()
-    test = df[df["datetime_utc"] >= "2021-01-01"].copy()
+    df = df.sort_values("datetime_utc").reset_index(drop=True)
+    n_rows = len(df)
+    train_end = max(1, int(n_rows * TRAIN_RATIO))
+    val_end = max(train_end + 1, int(n_rows * (TRAIN_RATIO + VAL_RATIO)))
+    val_end = min(val_end, n_rows - 1)
+
+    train = df.iloc[:train_end].copy()
+    val = df.iloc[train_end:val_end].copy()
+    test = df.iloc[val_end:].copy()
     return train, val, test
 
 

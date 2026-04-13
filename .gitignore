@@ -12,11 +12,9 @@ env/
 .env.*
 
 .ipynb_checkpoints/
+tests_tmp/
 
 *.log
-
-# Local helper scripts / scratch outputs
-pnl_05sl.py
 
 # OS / editor noise
 Thumbs.db
