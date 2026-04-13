@@ -84,7 +84,10 @@ def compute_statistical_tests(data: dict[str, pd.DataFrame]) -> dict[str, dict[s
     return summaries
 
 
-def plot_winrate_comparison(overall: dict[str, dict[str, dict[str, float]]], pairs: list[str]) -> None:
+def plot_market_participation_comparison(
+    overall: dict[str, dict[str, dict[str, float]]],
+    pairs: list[str],
+) -> None:
     strategies = ['Technical (RSI/MACD)', 'ML Direction (XGBoost)', 'ShiftGuard (Regime-Filtered)']
     labels = ['Technical', 'ML Direction', 'ShiftGuard']
     x = np.arange(len(pairs))
@@ -92,13 +95,13 @@ def plot_winrate_comparison(overall: dict[str, dict[str, dict[str, float]]], pai
 
     fig, ax = plt.subplots(figsize=(10, 5))
     for idx, (strategy, label) in enumerate(zip(strategies, labels)):
-        values = [overall.get(pair, {}).get(strategy, {}).get('win_rate', 0) for pair in pairs]
+        values = [overall.get(pair, {}).get(strategy, {}).get('trade_pct', 0) for pair in pairs]
         ax.bar(x + (idx - 1) * width, values, width=width, label=label)
 
-    ax.set_title('Win Rate Comparison by Pair')
+    ax.set_title('Market Participation Comparison by Pair')
     ax.set_xticks(x)
     ax.set_xticklabels(pairs)
-    ax.set_ylabel('Win Rate (%)')
+    ax.set_ylabel('Trade Percentage (%)')
     ax.legend()
     ax.grid(axis='y', alpha=0.2)
     fig.tight_layout()
@@ -188,7 +191,7 @@ def main() -> None:
     compute_statistical_tests(data)
     plot_equity_curves(data, list(data.keys()))
     if overall:
-        plot_winrate_comparison(overall, list(data.keys()))
+        plot_market_participation_comparison(overall, list(data.keys()))
         plot_profit_factor_comparison(overall, list(data.keys()))
     plot_regime_confusion_matrix(data)
 
