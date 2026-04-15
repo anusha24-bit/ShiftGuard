@@ -1,0 +1,50 @@
+{
+  "EURUSD": {
+    "pair": "EURUSD",
+    "chunk_size_bars": 180,
+    "evaluation_start": "2021-01-01",
+    "n_refits": 48,
+    "feature_count": 70,
+    "overall": {
+      "mae": 0.001122,
+      "rmse": 0.001632,
+      "dir_acc": 0.6087,
+      "accuracy": 0.6106,
+      "precision": 0.6022,
+      "recall": 0.6418,
+      "f1": 0.6213
+    }
+  },
+  "GBPJPY": {
+    "pair": "GBPJPY",
+    "chunk_size_bars": 180,
+    "evaluation_start": "2021-01-01",
+    "n_refits": 48,
+    "feature_count": 70,
+    "overall": {
+      "mae": 0.001636,
+      "rmse": 0.00246,
+      "dir_acc": 0.531,
+      "accuracy": 0.5323,
+      "precision": 0.5516,
+      "recall": 0.5507,
+      "f1": 0.5511
+    }
+  },
+  "XAUUSD": {
+    "pair": "XAUUSD",
+    "chunk_size_bars": 180,
+    "evaluation_start": "2021-01-01",
+    "n_refits": 47,
+    "feature_count": 76,
+    "overall": {
+      "mae": 0.002632,
+      "rmse": 0.004151,
+      "dir_acc": 0.5584,
+      "accuracy": 0.5589,
+      "precision": 0.5685,
+      "recall": 0.6078,
+      "f1": 0.5875
+    }
+  }
+}

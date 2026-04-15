@@ -255,6 +255,14 @@ For a quicker local validation run on one pair:
 python src/models/main_xgboost.py --pairs EURUSD --fast
 ```
 
+For the stricter walk-forward robustness experiment used to compare rolling refits against the current single-fit holdout benchmark:
+
+```bash
+python src/analysis/walkforward_report.py --pairs EURUSD GBPJPY XAUUSD
+```
+
+This writes comparison tables to `results/walkforward/` and figures to `results/figures/`.
+
 ## Adaptive Logic
 
 ShiftGuard is moving toward an **adaptive policy system**, not just a detector.
@@ -308,6 +316,19 @@ Tracked test-set metrics from `results/predictions/xgboost_summary.json`:
 - `EURUSD`: `MAE 0.001141`, directional accuracy `59.5%`
 - `GBPJPY`: `MAE 0.001621`, directional accuracy `52.6%`
 - `XAUUSD`: `MAE 0.003483`, directional accuracy `51.4%`
+
+### Walk-forward robustness summary
+
+Tracked walk-forward metrics from `results/walkforward/holdout_vs_walkforward.csv`:
+
+- `EURUSD`: walk-forward `MAE 0.001122` vs holdout `0.001141`, directional accuracy `60.87%` vs `59.34%`
+- `GBPJPY`: walk-forward `MAE 0.001636` vs holdout `0.001621`, directional accuracy `53.10%` vs `52.45%`
+- `XAUUSD`: walk-forward `MAE 0.002632` vs holdout `0.003483`, directional accuracy `55.84%` vs `51.34%`
+
+Headline takeaway:
+walk-forward validation improves MAE on `2/3` pairs and directional accuracy on all `3/3` pairs, with the clearest gain on `XAUUSD`.
+
+The generated figure `results/figures/walkforward_metric_comparison.png` compares static holdout versus walk-forward MAE and directional accuracy, while `results/figures/walkforward_rolling_mae.png` shows how the rolling error traces differ over time.
 
 ### Selective retraining summary
 

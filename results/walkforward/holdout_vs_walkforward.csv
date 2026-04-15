@@ -1,0 +1,4 @@
+pair,holdout_mae,walkforward_mae,mae_delta,holdout_dir_acc,walkforward_dir_acc,dir_acc_delta_pp,holdout_f1,walkforward_f1,f1_delta,refits
+EURUSD,0.001141,0.001122,-1.9e-05,59.34,60.87,1.53,0.6071,0.6213,0.0142,48
+GBPJPY,0.001621,0.001636,1.5e-05,52.45,53.1,0.65,0.5286,0.5511,0.0225,48
+XAUUSD,0.003483,0.002632,-0.000851,51.34,55.84,4.5,0.495,0.5875,0.0925,47
